@@ -1,7 +1,7 @@
 <?php 
 
 App::uses("EmailMessagesAppModel","EmailMessages.Model");
-App::uses("IEmailMessage","EmailMessage.Model/Interface");
+App::uses("IEmailMessage","EmailMessages.Model/Interface");
 App::uses('CakeEmail', 'Network/Email');
 
 class EmailMessage extends EmailMessagesAppModel implements IEmailMessage {
@@ -18,17 +18,17 @@ class EmailMessage extends EmailMessagesAppModel implements IEmailMessage {
     public static function getStatuses() {
 
         return array(
-            EmailMessage::PENDING => strtouppet(EmailMessage::PENDING),
-            EmailMessage::SENT => strtouppet(EmailMessage::SENT),
-            EmailMessage::PROCESSING => strtouppet(EmailMessage::PROCESSING),
-            EmailMessage::ERROR => strtouppet(EmailMessage::ERROR)
+            EmailMessage::PENDING => strtoupper(EmailMessage::PENDING),
+            EmailMessage::SENT => strtoupper(EmailMessage::SENT),
+            EmailMessage::PROCESSING => strtoupper(EmailMessage::PROCESSING),
+            EmailMessage::ERROR => strtoupper(EmailMessage::ERROR)
         );
 
     }
 
     public static function formatRecipients($data,$appendTo = false) {
 
-        if(!isset($data['to']) || !isset($data['cc']) || !isset($data['bcc'])) {
+        if(!isset($data['to']) && !isset($data['cc']) && !isset($data['bcc'])) {
             throw new FatalErrorException("EmailMessage::formatRecipients - INCOMING DATA MUST HAVE KEY OF 'to','cc' OR 'bcc'");
         }
 
@@ -53,33 +53,78 @@ class EmailMessage extends EmailMessagesAppModel implements IEmailMessage {
         $r = self::parseRecipients($recipients);
 
         if(isset($r['to']) && count($r['to'])>0) {
+            $to = array();
             
-            foreach($t['to'] as $email=>$name) {
-                $emailObj->to($email,$name);    
+            foreach($r['to'] as $email=>$name) {
+                 if(is_numeric($email)) {
+                    $email = $name;
+                }
+                $to[$email]=$name;    
             }
-            
+            $emailObj->to($to);
         }
 
         if(isset($r['cc']) && count($r['cc'])>0) {
+            $cc = array();
             
-            foreach($t['cc'] as $email=>$name) {
-                $emailObj->cc($email,$name);    
+            foreach($r['cc'] as $email=>$name) {
+                 if(is_numeric($email)) {
+                    $email = $name;
+                }
+                $cc[$email]=$name;    
             }
-            
+            $emailObj->cc($cc);
+        }
+        
+        if(isset($r['bcc']) && count($r['bcc'])>0) {
+            $bcc = array();
+           
+            foreach($r['bcc'] as $email=>$name) {
+                 if(is_numeric($email)) {
+                    $email = $name;
+                }
+                $bcc[$email]=$name;    
+            }
+            $emailObj->bcc($bcc);
         }
 
+    }
 
-        if(isset($r['bcc']) && count($r['bcc'])>0) {
+    public function setAttachments($EmailMessage,$emailObj) {
+        
+        if(!empty($EmailMessage['attachments'])) {
             
-            foreach($t['bcc'] as $email=>$name) {
-                $emailObj->bcc($email,$name);    
+            $filePaths = explode(",", $EmailMessage['attachments']);
+            $attachments = array();    
+
+            foreach($filePaths as $v) {
+                
+                $test = explode(":",$v);
+
+                if(count($test)==2) {
+                    $attachments[$test[0]] = $test[1];
+                } else {
+                    $attachments[] = $v;
+                }
+
             }
-            
+
+            $emailObj->attachments($attachments);
+
         }
 
     }
 
 
+    /**
+     * Adds an PENDING email to the database with the option of processing/sending in the same execution.
+     * This is not the default behavior. You may wish for the email to be sent in the background to 
+     * avoid having user have to wait for a possibly long process.
+     * 
+     *
+     * @param [type]  $data [description]
+     * @param boolean $send [description]
+     */
     public function addEmail($data,$send = false) {
 
         if(isset($data['EmailMessage'])) {
@@ -92,16 +137,20 @@ class EmailMessage extends EmailMessagesAppModel implements IEmailMessage {
             $data['email_config'] = 'default';
         }
 
-        if(!isset($data['layout']) || empty($data['layout'])) {
-            $data['layout'] = 'default';
+        if(!isset($data['layout_file']) || empty($data['layout_file'])) {
+            $data['layout_file'] = 'EmailMessages.default';
         }
 
-        if(!empty($data['to_email']) || !empty($data['recipients'])) {
+        if(empty($data['to_email']) && empty($data['recipients'])) {
             throw new FatalErrorException("EmailMessage::addEmail - NO TO_EMAIL OR RECIPIENTS SPECIFIED");
         }
 
         if(!isset($data['domain']) || empty($data['domain'])) {
-            $data['domain'] = (isset(env("HTTP_HOST"))) ? env("HTTP_HOST"):"";
+            $data['domain'] = (isset($_SERVER["HTTP_HOST"])) ? env("HTTP_HOST"):"";
+        }
+
+        if(!isset($data['priority']) || empty($data['priority'])) {
+            $data['priority'] = 0;
         }
 
         if(!$this->save($data)) {
@@ -142,7 +191,7 @@ class EmailMessage extends EmailMessagesAppModel implements IEmailMessage {
 
     public function send($EmailMessage) {
 
-        if(!isset($EmailMessage['EmailMessage'])) {
+        if(isset($EmailMessage['EmailMessage'])) {
             $e = $EmailMessage['EmailMessage'];
         } else {
             $e = $EmailMessage;
@@ -164,9 +213,9 @@ class EmailMessage extends EmailMessagesAppModel implements IEmailMessage {
             $e = $model->emailMessage_beforeSend($e);
         }
 
-        $email = $this->getConfig($e['email_config']);
+        $email = new CakeEmail($e['email_config']);
 
-        $email->reset();
+        $email->subject($e['subject']);
 
         if(!empty($e['to_email'])) {
             $name = (!empty($e['to_name'])) ? $e['to_name']:"";
@@ -177,38 +226,41 @@ class EmailMessage extends EmailMessagesAppModel implements IEmailMessage {
             $this->setRecipients($e['recipients'],$email);
         }
 
-        $email->template($e['view'],$e['layout']);
+        $email->template($e['view_file'],$e['layout_file']);
 
         $email->viewVars(array("EmailMessage"=>$e));
+
+        //check for attachments
+        $this->setAttachments($e,$email);
 
         try {
             $send_status = EmailMessage::SENT;
             $send_result = $email->send();
+            print_r($send_result);
         }
         catch (Exception $e) {
             $send_status = EmailMessage::ERROR;
+            print_r($e);
+        } 
+
+        $this->update_status($e['id'],$send_status,array("send_result"=>var_dump($send_result),"sent_datetime"=>date("Y-m-d H:i:s")));
+
+        if($model) {
+            $e = $model->emailMessage_afterSend($e);
         }
 
-        finally {
+        unset($model,$e);
 
-            $this->update_status($e['id'],$send_status,array("send_result"=>$send_result));
-
-            if($model) {
-                $e = $model->emailMessage_afterSend($e);
-            }
-
-            unset($model,$e);
-
-        }
+        
        
-
+        return $send_status;
 
 
     }
 
     public function getConfig($config = 'default') {
 
-        if(!$this->email_configs[$config]) {
+        if(!isset($this->email_configs[$config])) {
 
             $this->email_configs[$config] = new CakeEmail($config);
 
@@ -226,7 +278,7 @@ class EmailMessage extends EmailMessagesAppModel implements IEmailMessage {
             ),
             'contain'=>false,
             'limit'=>$batch,
-            'order'=>array("EmailMessage.created"=>"ASC");
+            'order'=>array("EmailMessage.created"=>"ASC")
         ));
 
         foreach($msgs as $msg) {

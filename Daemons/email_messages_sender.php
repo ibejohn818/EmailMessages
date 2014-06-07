@@ -17,7 +17,7 @@ if($pid === -1) {
 
     while(true) {
 
-        `nohup {$shell} email_messages.run_sender >& /dev/null &`;
+        `nohup {$shell} EmailMessages.sender run_sender >& /dev/null &`;
 
         sleep(10);
 
