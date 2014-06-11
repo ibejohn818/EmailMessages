@@ -6,6 +6,22 @@ App::uses('CakeEmail', 'Network/Email');
 
 class EmailMessage extends EmailMessagesAppModel implements IEmailMessage {
 
+
+    /**
+     * Parent Constructor
+     * I don't like doing this but have no choice to allow better flexibility in configuration
+     * @param boolean $id    [description]
+     * @param [type]  $table [description]
+     * @param [type]  $ds    [description]
+     */
+    public function __construct($id = false, $table = null, $ds = null) {
+
+        $this->tablePrefix = Configure::read("EmailMessages.email_messages_table_prefix");
+
+        parent::__construct($id,$table,$ds);
+
+    }
+
     private $email_configs = array();
 
     #STATUSES
@@ -230,6 +246,10 @@ class EmailMessage extends EmailMessagesAppModel implements IEmailMessage {
 
         $email->viewVars(array("EmailMessage"=>$e));
 
+        if(!empty($e['domain'])) {
+            $email->domain($e['domain']);
+        }
+
         //check for attachments
         $this->setAttachments($e,$email);
 
@@ -270,7 +290,11 @@ class EmailMessage extends EmailMessagesAppModel implements IEmailMessage {
 
     }
 
-    public function send_batch($batch = 10) {
+    public function send_batch($batch = false) {
+
+        if(!$batch) {
+            $batch = Configure::read("EmailMessages.batch_limit");
+        }
 
         $msgs = $this->find('all',array(
             'conditions'=>array(
