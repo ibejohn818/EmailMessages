@@ -72,7 +72,7 @@ class EmailMessage extends EmailMessagesAppModel implements IEmailMessage {
             $to = array();
             
             foreach($r['to'] as $email=>$name) {
-                 if(is_numeric($email)) {
+                if(!self::validateEmailAddress($email)) {
                     $email = $name;
                 }
                 $to[$email]=$name;    
@@ -84,7 +84,7 @@ class EmailMessage extends EmailMessagesAppModel implements IEmailMessage {
             $cc = array();
             
             foreach($r['cc'] as $email=>$name) {
-                 if(is_numeric($email)) {
+                 if(!self::validateEmailAddress($email)) {
                     $email = $name;
                 }
                 $cc[$email]=$name;    
@@ -96,7 +96,7 @@ class EmailMessage extends EmailMessagesAppModel implements IEmailMessage {
             $bcc = array();
            
             foreach($r['bcc'] as $email=>$name) {
-                 if(is_numeric($email)) {
+                 if(!self::validateEmailAddress($email)) {
                     $email = $name;
                 }
                 $bcc[$email]=$name;    
@@ -222,7 +222,7 @@ class EmailMessage extends EmailMessagesAppModel implements IEmailMessage {
         }
 
         if($model && !($model instanceof IEmailMessage)) {
-            throw new FatalErrorException("EmailMesasge::send - {$e['model']} MUST IMPLEMENT IEMAILMESSAGE INTERFACE ( App::uses('IEmailMessage','EmailMessage.Model/Interface') )");
+            throw new FatalErrorException("EmailMesasge::send - {$e['model']} MUST IMPLEMENT IEMAILMESSAGE INTERFACE ( App::uses('IEmailMessage','EmailMessage.Model') )");
         }
 
         if($model) {
@@ -302,12 +302,22 @@ class EmailMessage extends EmailMessagesAppModel implements IEmailMessage {
             ),
             'contain'=>false,
             'limit'=>$batch,
-            'order'=>array("EmailMessage.created"=>"ASC")
+            'order'=>array("EmailMessage.priority"=>"DESC","EmailMessage.created"=>"ASC")
         ));
 
         foreach($msgs as $msg) {
             $this->send($msg);
         }
+
+    }
+
+    public static function validateEmailAddress($email) {
+
+        if(preg_match('/^[\p{L}0-9!#$%&\'*+\/=?^_`{|}~-]+(?:\.[\p{L}0-9!#$%&\'*+\/=?^_`{|}~-]+)*@(?:[_\p{L}0-9][-_\p{L}0-9]*\.)*(?:[\p{L}0-9][-\p{L}0-9]{0,62})\.(?:(?:[a-z]{2}\.)?[a-z]{2,})$/ui',$email)) {
+            return true;
+        }
+
+        return false;
 
     }
 
